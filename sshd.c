@@ -123,9 +123,20 @@
 #include "version.h"
 #include "ssherr.h"
 
-#if defined(ANDROID_GCE) && defined(GCE_PLATFORM_SDK_VERSION) && GCE_PLATFORM_SDK_VERSION >= 28
+#if defined(ANDROID_GCE)
 #define GNU_SOURCE
 #include <sched.h>
+#include <sys/syscall.h>
+
+int gce_setns(int fd, int clone_flags) {
+#ifdef __i386__
+  return syscall(346, fd, clone_flags);
+#elif __x86_64__
+  return syscall(308, fd, clone_flags);
+#else
+#error "Unsupported Architecture"
+#endif
+}
 #endif
 
 /* Re-exec fds */
@@ -1040,7 +1051,7 @@ server_listen(void)
 			continue;
 		}
 
-#if defined(ANDROID_GCE) && defined(GCE_PLATFORM_SDK_VERSION) && GCE_PLATFORM_SDK_VERSION >= 28
+#if defined(ANDROID_GCE)
 		/*
 		 * Android GCE specific, bug 67899876
 		 * Open socket in external namespace, making it possible to serve SSH
@@ -1049,7 +1060,7 @@ server_listen(void)
 		int outerfd = open("/var/run/netns/outer.net", O_RDONLY);
 		int androidfd = open("/var/run/netns/android.net", O_RDONLY);
 		if (outerfd > 0 && androidfd > 0) {
-			if (setns(outerfd, 0) != 0) {
+			if (gce_setns(outerfd, 0) != 0) {
 				fprintf(stderr, "Could not set netns: %s\n",
 					strerror(errno));
 				exit(1);
@@ -1061,9 +1072,9 @@ server_listen(void)
 		listen_sock = socket(ai->ai_family, ai->ai_socktype,
 		    ai->ai_protocol);
 
-#if defined(ANDROID_GCE) && defined(GCE_PLATFORM_SDK_VERSION) && GCE_PLATFORM_SDK_VERSION >= 28
+#if defined(ANDROID_GCE)
 		if (androidfd > 0) {
-			if (setns(androidfd, 0) != 0) {
+			if (gce_setns(androidfd, 0) != 0) {
 				fprintf(stderr, "Could not set netns: %s\n",
 					strerror(errno));
 				exit(1);
